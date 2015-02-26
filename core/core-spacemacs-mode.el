@@ -57,12 +57,22 @@
 (defvar spacemacs-loading-dots-chunk-threshold 0)
 (defvar spacemacs-solarized-dark-createdp nil)
 
-(define-derived-mode spacemacs-mode special-mode "spacemacs-mode"
+(define-derived-mode spacemacs-mode special-mode "Spacemacs"
   "Spacemacs major mode for startup screen."
   :syntax-table nil
   :abbrev-table nil
   (setq truncate-lines t)
   (setq cursor-type nil)
+  ;; motion state since this is a special mode
+  (add-to-list 'evil-motion-state-modes 'spacemacs-mode))
+
+(defun spacemacs/initialize ()
+  "Create the special buffer for `spacemacs-mode' and perform startup
+initialization."
+  (require 'core-toggle)
+  (require 'core-micro-state)
+  (dotspacemacs/load)
+  (switch-to-buffer (get-buffer-create spacemacs-buffer-name))
   ;; no welcome buffer
   (setq inhibit-startup-screen t)
   ;; default theme
@@ -90,30 +100,29 @@
                                "able to launch a graphical instance of Emacs"
                                "with this build.")))
   ;; font
-  (when (member (car dotspacemacs-default-font) (font-family-list))
-    (spacemacs/set-font dotspacemacs-default-font))
+  (if (find-font (font-spec :name (car dotspacemacs-default-font)))
+      (spacemacs/set-default-font dotspacemacs-default-font)
+    (spacemacs/message "Warning: Cannot find font \"%s\"!"
+                       (car dotspacemacs-default-font)))
   ;; banner
   (spacemacs//insert-banner)
+  (setq-default evil-want-C-u-scroll t)
+  ;; Initializing configuration from ~/.spacemacs
+  (dotspacemacs|call-func dotspacemacs/init "Executing user init...")
+  ;; dash is required to prevent a package.el bug with f on 24.3.1
+  (spacemacs/load-or-install-package 'dash t)
   ;; bind-key is required by use-package
   (spacemacs/load-or-install-package 'bind-key t)
   (spacemacs/load-or-install-package 'use-package t)
   ;; evil and evil-leader must be installed at the beginning of the boot sequence
   ;; use C-u as scroll-up (must be set before actually loading evil)
-  (setq-default evil-want-C-u-scroll t)
-  (setq-default evil-want-fine-undo nil)
   (spacemacs/load-or-install-package 'evil t)
   (spacemacs/load-or-install-package 'evil-leader t)
   ;; check for new version
   (if dotspacemacs-mode-line-unicode-symbols
       (setq-default spacemacs-version-check-lighter "[⇪]"))
   (spacemacs/set-new-version-lighter-mode-line-faces)
-  ;; motion state since this is a special mode
-  (add-to-list 'evil-motion-state-modes 'spacemacs-mode))
-
-(defun spacemacs/initialize ()
-  "Create the special buffer for `spacemacs-mode' and perform startup
-initialization."
-  (switch-to-buffer (get-buffer-create "*spacemacs*"))
+  (add-hook 'after-init-hook 'spacemacs/goto-link-line)
   (spacemacs-mode))
 
 (defun spacemacs//get-package-directory (pkg)
@@ -147,7 +156,7 @@ FILE-TO-LOAD is an explicit file to load after the installation."
          (when log
            (spacemacs/append-to-buffer
             (format "(Bootstrap) Installing %s...\n" pkg))
-           (redisplay))
+           (spacemacs//redisplay))
          (package-refresh-contents)
          (package-install pkg)
          (setq pkg-elpa-dir (spacemacs//get-package-directory pkg)))

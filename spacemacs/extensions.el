@@ -66,6 +66,8 @@
     (spacemacs|hide-lighter evil-escape-mode)))
 
 (defun spacemacs/init-evil-lisp-state ()
+  (setq evil-lisp-state-global t)
+  (setq evil-lisp-state-leader-prefix "k")
   (require 'evil-lisp-state))
 
 (defun spacemacs/init-helm-rcirc ()
@@ -163,11 +165,13 @@ Press any other key to exit."))
         "Zoom the buffer in/out. If DIRECTION is positive or zero the frame text is enlarged,
 otherwise it is reduced."
         (interactive)
-        (if (eq direction 0)
-            (zoom-frm-unzoom)
-          (if (< direction 0)
-              (zoom-frm-out)
-            (zoom-frm-in)))
+        (cond
+         ((eq direction 0) (zoom-frm-unzoom))
+         ((< direction 0) (zoom-frm-out))
+         ((> direction 0) (zoom-frm-in)))
+        (when (fboundp 'powerline-reset)
+          (setq-default powerline-height (spacemacs/compute-powerline-height))
+          (powerline-reset))
         (spacemacs/zoom-frame-overlay-map)
         (spacemacs/zoom-frame-micro-state-doc))
       (evil-leader/set-key

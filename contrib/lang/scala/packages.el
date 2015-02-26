@@ -12,6 +12,7 @@
 
 (defvar scala-packages
   '(
+    projectile
     ensime
     sbt-mode
     scala-mode2
@@ -19,18 +20,34 @@
   "List of all packages to install and/or initialize. Built-in packages
 which require an initialization must be listed explicitly in the list.")
 
+(defun scala/init-projectile ()
+  (use-package projectile
+    :defer t))
+
 (defun scala/init-ensime ()
   (use-package ensime
     :commands (ensime-mode)
     :init
     (progn
+      (add-hook 'ensime-mode-hook 'scala/enable-eldoc)
       (add-hook 'scala-mode-hook 'scala/configure-flyspell)
-      (add-hook 'scala-mode-hook 'scala/configure-ensime))
+      (add-hook 'scala-mode-hook 'scala/configure-ensime)
+      (add-hook 'scala-mode-hook 'scala/maybe-start-ensime))
     :config
     (progn
-      (evil-define-key 'insert ensime-mode-map (kbd ".") 'scala/completing-dot)
+      (evil-define-key 'insert ensime-mode-map
+        (kbd ".") 'scala/completing-dot
+        (kbd "M-.") 'ensime-edit-definition
+        (kbd "M-,") 'ensime-pop-find-definition-stack)
+
+      (evil-define-key 'normal ensime-mode-map
+        (kbd "M-.") 'ensime-edit-definition
+        (kbd "M-,") 'ensime-pop-find-definition-stack)
 
       (evil-define-key 'normal ensime-popup-buffer-map
+        (kbd "q") 'ensime-popup-buffer-quit-function)
+
+      (evil-define-key 'normal ensime-inspector-mode-map
         (kbd "q") 'ensime-popup-buffer-quit-function)
 
       (evil-define-key 'normal ensime-refactor-info-map
@@ -46,6 +63,98 @@ which require an initialization must be listed explicitly in the list.")
         (kbd "M-p") 'backward-button
         (kbd "n") 'forward-button
         (kbd "N") 'backward-button)
+
+      (defun ensime-gen-and-restart()
+        "Regenerate `.ensime' file and restart the ensime server."
+        (interactive)
+        (progn
+          (sbt-command "gen-ensime")
+          (ensime-shutdown)
+          (ensime)))
+
+      (defun ensime-inf-eval-buffer-switch ()
+        "Send buffer content to shell and switch to it in insert mode."
+        (interactive)
+        (ensime-inf-eval-buffer)
+        (ensime-inf-switch)
+        (evil-insert-state))
+
+      (defun ensime-inf-eval-region-switch (start end)
+        "Send region content to shell and switch to it in insert mode."
+        (interactive "r")
+        (ensime-inf-switch)
+        (ensime-inf-eval-region start end)
+        (evil-insert-state))
+
+      (evil-leader/set-key-for-mode 'scala-mode
+        "m/"     'ensime-search
+        "m?"     'ensime-scalex
+
+        "mbc"     'ensime-sbt-do-compile
+        "mbC"     'ensime-sbt-do-clean
+        "mbi"     'ensime-sbt-switch
+        "mbp"     'ensime-sbt-do-package
+        "mbr"     'ensime-sbt-do-run
+
+        "mct"     'ensime-typecheck-current-file
+        "mcT"     'ensime-typecheck-all
+
+        "mdb"     'ensime-db-set-break
+        "mdB"     'ensime-db-clear-break
+        "mdC"     'ensime-db-clear-all-breaks
+        "mdc"     'ensime-db-continue
+        "mdd"     'ensime-db-start
+        "mdi"     'ensime-db-inspect-value-at-point
+        "mdl"     'ensime-db-list-locals
+        "mdn"     'ensime-db-next
+        "mdo"     'ensime-db-step-out
+        "mdq"     'ensime-db-quit
+        "mdr"     'ensime-db-run
+        "mds"     'ensime-db-step
+        "mdt"     'ensime-db-backtrace
+
+        "mee"     'ensime-print-errors-at-point
+        "mel"     'ensime-show-all-errors-and-warnings
+        "mes"     'ensime-stacktrace-switch
+
+        "mgg"     'ensime-edit-definition
+        "mgi"     'ensime-goto-impl
+        "mgt"     'ensime-goto-test
+
+        "mhh"     'ensime-show-doc-for-symbol-at-point
+        "mhu"     'ensime-show-uses-of-symbol-at-point
+        "mht"     'ensime-print-type-at-point
+
+        "mii"     'ensime-inspect-type-at-point
+        "miI"     'ensime-inspect-type-at-point-other-frame
+        "mip"     'ensime-inspect-project-package
+
+        "mnF"     'ensime-reload-open-files
+        "mns"     'ensime
+        "mnS"     'ensime-gen-and-restart
+
+        "mrd"     'ensime-refactor-inline-local
+        "mrD"     'ensime-undo-peek
+        "mrf"     'ensime-format-source
+        "mri"     'ensime-refactor-organize-imports
+        "mrm"     'ensime-refactor-extract-method
+        "mrr"     'ensime-refactor-rename
+        "mrt"     'ensime-import-type-at-point
+        "mrv"     'ensime-refactor-extract-local
+
+        "mta"     'ensime-sbt-do-test
+        "mtr"     'ensime-sbt-do-test-quick
+        "mtt"     'ensime-sbt-do-test-only
+
+        "msa"     'ensime-inf-load-file
+        "msb"     'ensime-inf-eval-buffer
+        "msB"     'ensime-inf-eval-buffer-switch
+        "msi"     'ensime-inf-switch
+        "msr"     'ensime-inf-eval-region
+        "msR"     'ensime-inf-eval-region-switch
+
+        "mz"      'ensime-expand-selection-command
+        )
 
       ;; Don't use scala checker if ensime mode is active, since it provides
       ;; better error checking.

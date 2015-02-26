@@ -15,8 +15,7 @@
 
 (defvar dotspacemacs-configuration-layer-path '()
   "List of additional paths where to look for configuration layers.
-Paths must have a trailing slash (ie. `~/.mycontribs/')"
-  )
+Paths must have a trailing slash (ie. `~/.mycontribs/')")
 
 (defvar dotspacemacs-startup-banner 'random
   "Specify the startup banner. If the value is an integer then the
@@ -25,13 +24,20 @@ then the banner is chosen randomly among the available banners, if
 the value is nil then no banner is displayed.")
 
 (defvar dotspacemacs-configuration-layers '()
-  "list of contribution to load."
-)
+  "List of configuration layers to load. If it is the symbol `all' instead
+of a list then all discovered layers will be installed.")
 
-(defvar dotspacemacs-themes '(solarized-light solarized-dark)
+(defvar dotspacemacs-themes '(solarized-light
+                              solarized-dark
+                              leuven
+                              monokai
+                              zenburn)
   "List of themes, the first of the list is loaded when spacemacs starts.
 Press <SPC> T n to cycle to the next theme in the list (works great
 with 2 themes variants, one dark and one light")
+
+(defvar dotspacemacs-colorize-cursor-according-to-state t
+  "If non nil the cursor color matches the state color.")
 
 (defvar dotspacemacs-leader-key "SPC"
   "The leader key.")
@@ -44,8 +50,8 @@ pressing `<leader> m`")
                                     :size 13
                                     :weight normal
                                     :width normal
-                                    :powerline-offset 2)
-  "Default font. The powerline-offset allows to quickly tweak the mode-line
+                                    :powerline-scale 1.1)
+  "Default font. `powerline-scale' allows to quickly tweak the mode-line
 size to make separators look not too crappy.")
 
 (defvar dotspacemacs-command-key ":"
@@ -55,6 +61,14 @@ with `:' and Emacs commands are executed with `<leader> :'.")
 
 (defvar dotspacemacs-guide-key-delay 0.4
   "Guide-key delay in seconds.")
+
+(defvar dotspacemacs-loading-progress-bar t
+  "If non nil a progress bar is displayed when spacemacs is loading. This
+may increase the boot time on some systems and emacs builds, set it to nil
+to boost the loading time.")
+
+(defvar dotspacemacs-helm-micro-state t
+  "Enable micro-state for helm buffer when pressing on TAB.")
 
 (defvar dotspacemacs-fullscreen-at-startup nil
   "If non nil the frame is fullscreen when Emacs starts up (Emacs 24.4+ only).")
@@ -91,11 +105,15 @@ it reaches the top or bottom of the screen.")
 (defvar dotspacemacs-smartparens-strict-mode nil
   "If non-nil smartparens-strict-mode will be enabled in programming modes.")
 
+(defvar dotspacemacs-delete-orphan-packages t
+  "If non-nil spacemacs will delete any orphan packages, i.e. packages that are
+declared in a layer which is not a member of
+ `dotspacemacs-configuration-layers'")
+
 (defvar dotspacemacs-default-package-repository 'melpa-stable
   "The default package repository used if no explicit repository has been
 specified with an installed package.
-NOT USED FOR NOW :-)"
-)
+NOT USED FOR NOW :-)")
 
 (defvar dotspacemacs-excluded-packages '()
   "A list of packages and/or extensions that will not be install and loaded.")
@@ -119,13 +137,15 @@ before installing the file if the destination already exists."
       (message "%s has been installed." dotfile))))
 
 (defun dotspacemacs/load ()
-  "Load ~/.spacemacs. If it is not found then copy .spacemacs.template to
-~/.spacemacs"
+  "Load ~/.spacemacs if it exists."
   (let ((dotspacemacs (dotspacemacs/location)))
     (if (file-exists-p dotspacemacs) (load dotspacemacs))))
 
-(defmacro dotspacemacs|call-func (func)
-  "Call the function from the dotfile only if it is bound."
-  `(if (fboundp ',func) (,func)))
+(defmacro dotspacemacs|call-func (func &optional msg)
+  "Call the function from the dotfile only if it is bound.
+If MSG is not nil then display a message in `*Messages'."
+  `(progn
+     (when ,msg (spacemacs/message ,msg))
+     (if (fboundp ',func) (,func))))
 
 (provide 'core-dotspacemacs)

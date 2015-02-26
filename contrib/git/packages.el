@@ -14,6 +14,7 @@
   '(
     fringe-helper
     git-messenger
+    git-rebase-mode
     git-timemachine
     gist
     github-browse-file
@@ -84,6 +85,7 @@ which require an initialization must be listed explicitly in the list.")
         "Lazy load git gutter and choose between fringe and no fringe."
         (when (display-graphic-p) (require 'git-gutter-fringe))
         (init-git-gutter))
+      (setq git-gutter-fr:side 'right-fringe)
       (add-to-hooks 'git/load-git-gutter '(markdown-mode-hook
                                            org-mode-hook
                                            prog-mode-hook)))
@@ -97,7 +99,6 @@ which require an initialization must be listed explicitly in the list.")
         "ghr" 'git-gutter:revert-hunk
         "ghN" 'git-gutter:previous-hunk
         "ghn" 'git-gutter:next-hunk)
-      (setq git-gutter-fr:side 'right-fringe)
       ;; (setq git-gutter:update-hooks '(after-save-hook after-revert-hook))
       ;; custom graphics that works nice with half-width fringes
       (fringe-helper-define 'git-gutter-fr:added nil
@@ -129,12 +130,46 @@ which require an initialization must be listed explicitly in the list.")
     (evil-leader/set-key
       "gm" 'git-messenger:popup-message)))
 
+(defun git/init-git-rebase-mode ()
+  (use-package git-rebase-mode
+    :defer t
+    :init
+    (add-to-list 'evil-emacs-state-modes 'git-rebase-mode)
+    :config
+    (progn
+      (spacemacs|evilify git-rebase-mode-map "y" 'git-rebase-insert)
+      (spacemacs/activate-evil-leader-for-map 'git-rebase-mode-map))))
+
 (defun git/init-git-timemachine ()
   (use-package git-timemachine
     :defer t
+    :commands spacemacs/time-machine-micro-state
     :init
     (evil-leader/set-key
-      "gt" 'git-timemachine)))
+      "gt" 'spacemacs/time-machine-micro-state)
+
+    :config
+    (progn
+
+      (defun spacemacs//time-machine-ms-on-enter ()
+        "Initiate git-timemachine properly with goden-ratio support."
+        (let ((golden-ratio (when (boundp 'golden-ratio-mode)
+                              golden-ratio-mode)))
+          (when (bound-and-true-p golden-ratio-mode) (golden-ratio-mode -1))
+          (git-timemachine)
+          (when golden-ratio (golden-ratio-mode))))
+
+      (spacemacs|define-micro-state time-machine
+        :doc "[p] [N] previous [n] next [c] current [q] quit"
+        :on-enter (spacemacs//time-machine-ms-on-enter)
+        :on-exit (git-timemachine-quit)
+        :persistent t
+        :bindings
+        ("c" git-timemachine-show-current-revision)
+        ("p" git-timemachine-show-previous-revision)
+        ("n" git-timemachine-show-next-revision)
+        ("N" git-timemachine-show-previous-revision)
+        ("q" nil :exit t)))))
 
 ;; this mode is not up to date
 ;; any contributor to make it up to date is welcome:

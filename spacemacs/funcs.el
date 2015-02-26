@@ -476,61 +476,6 @@ argument takes the kindows rotate backwards."
     (switch-to-buffer this-buffer) ;; why? Some ido commands, such as textmate.el's textmate-goto-symbol don't switch the current buffer
     result))
 
-
-;; from https://gist.github.com/cofi/3013327
-(defun cofi/helm-flyspell-correct ()
-    "Use helm for flyspell correction.
-Adapted from `flyspell-correct-word-before-point'."
-    (interactive)
-    ;; use the correct dictionary
-    (flyspell-accept-buffer-local-defs)
-    (let ((cursor-location (point))
-          (word (flyspell-get-word))
-          (opoint (point)))
-      (if (consp word)
-          (let ((start (car (cdr word)))
-                (end (car (cdr (cdr word))))
-                (word (car word))
-                poss ispell-filter)
-            ;; now check spelling of word.
-            (ispell-send-string "%\n")	;put in verbose mode
-            (ispell-send-string (concat "^" word "\n"))
-            ;; wait until ispell has processed word
-            (while (progn
-                     (accept-process-output ispell-process)
-                     (not (string= "" (car ispell-filter)))))
-            ;; Remove leading empty element
-            (setq ispell-filter (cdr ispell-filter))
-            ;; ispell process should return something after word is sent.
-            ;; Tag word as valid (i.e., skip) otherwise
-            (or ispell-filter
-               (setq ispell-filter '(*)))
-            (if (consp ispell-filter)
-                (setq poss (ispell-parse-output (car ispell-filter))))
-            (cond
-             ((or (eq poss t) (stringp poss))
-              ;; don't correct word
-              t)
-             ((null poss)
-              ;; ispell error
-              (error "Ispell: error in Ispell process"))
-             (t
-              ;; The word is incorrect, we have to propose a replacement.
-              (flyspell-do-correct (helm-comp-read "Correction: "
-                                                   (append
-                                                    (third poss)
-                                                    '(("Save word"        . save)
-                                                      ("Accept (session)" . session)
-                                                      ("Accept (buffer)"  . buffer)))
-                                                   :name (format "%s [%s]" word (or ispell-local-dictionary
-                                                                                   ispell-dictionary
-                                                                                   "Default"))
-                                                   :must-match t
-                                                   :alistp t)
-
-                                   poss word cursor-location start end opoint)))
-            (ispell-pdict-save t)))))
-
 (defun set-google-translate-languages (source target)
   "Set source language for google translate.
 For instance pass En as source for english."
@@ -603,19 +548,28 @@ kill internal buffers too."
     (spacemacs/frame-killer)))
 
 (defun spacemacs/save-buffers-kill-emacs ()
+  "Save all changed buffers and exit Spacemacs"
   (interactive)
   (setq spacemacs-really-kill-emacs t)
   (save-buffers-kill-emacs))
 
 (defun spacemacs/kill-emacs ()
+  "Lose all changes and exit Spacemacs"
   (interactive)
   (setq spacemacs-really-kill-emacs t)
   (kill-emacs))
 
-(defun spacemacs/frame-killer ()
-  "Exit server buffers and hide the main Emacs window"
+(defun spacemacs/prompt-kill-emacs ()
+  "Prompt to save changed buffers and exit Spacemacs"
   (interactive)
-  (server-edit)
+  (setq spacemacs-really-kill-emacs t)
+  (save-some-buffers)
+  (kill-emacs))
+
+(defun spacemacs/frame-killer ()
+  "Kill server buffer and hide the main Emacs window"
+  (interactive)
+  (server-kill-buffer)
   (make-frame-invisible nil 1))
 
 ;; A small minor mode to use a big fringe
@@ -727,51 +681,6 @@ otherwise it is scaled down."
 
 ;;; end scale font micro-state
 
-;;; begin resize window micro-state
-
-(defun spacemacs//resize-window-micro-state-doc ()
-  (echo (format
-         "[%sx%s] Resize window: (H/L) shrink/enlarge horizontally, (J/K) shrink/enlarge vertically"
-         (window-total-width) (window-total-height))))
-
-(defun spacemacs/resize-window-overlay-map ()
-  "Set a temporary overlay map to easily resize a window."
-  (interactive)
-  (set-temporary-overlay-map
-   (let ((map (make-sparse-keymap)))
-     (define-key map (kbd "H") 'spacemacs/shrink-window-horizontally)
-     (define-key map (kbd "J") 'spacemacs/shrink-window)
-     (define-key map (kbd "K") 'spacemacs/enlarge-window)
-     (define-key map (kbd "L") 'spacemacs/enlarge-window-horizontally)
-     map) t)
-  (spacemacs//resize-window-micro-state-doc))
-
-(defun spacemacs/shrink-window-horizontally (delta)
-  "Wrap `spacemacs/shrink-window-horizontally'."
-  (interactive "p")
-  (shrink-window delta t)
-  (spacemacs/resize-window-overlay-map))
-
-(defun spacemacs/shrink-window (delta)
-  "Wrap `spacemacs/shrink-window'."
-  (interactive "p")
-  (shrink-window delta)
-  (spacemacs/resize-window-overlay-map))
-
-(defun spacemacs/enlarge-window (delta)
-  "Wrap `spacemacs/enlarge-window'."
-  (interactive "p")
-  (enlarge-window delta)
-  (spacemacs/resize-window-overlay-map))
-
-(defun spacemacs/enlarge-window-horizontally (delta)
-  "Wrap `spacemacs/enlarge-window-horizontally'."
-  (interactive "p")
-  (enlarge-window delta t)
-  (spacemacs/resize-window-overlay-map))
-
-;;; end resize window micro-state
-
 (defmacro spacemacs|diminish (mode unicode &optional ascii)
   "Diminish MODE name in mode line to UNICODE or ASCII depending on the value
 `dotspacemacs-mode-line-unicode-symbols'.
@@ -828,28 +737,42 @@ If ASCII si not provided then UNICODE is used instead."
   "Return the line at point as a string."
   (buffer-substring (line-beginning-position) (line-end-position)))
 
-(defun spacemacs/toggle-tool-bar ()
-  "Toggle the tool bar.
-It has no effect in a terminal."
-  (interactive)
-  (when window-system
-    (tool-bar-mode (if tool-bar-mode -1 1))))
-
-(defun spacemacs/toggle-menu-bar ()
-  "Toggle the menu bar.
-It has no effect in a terminal if the Emacs version is < `24.4'."
-  (interactive)
-  (when (or window-system
-            (version<= "24.3.1" emacs-version))
-    (menu-bar-mode (if menu-bar-mode -1 1))))
-
 (defun spacemacs/open-in-external-app ()
   "Open current file in external application."
   (interactive)
-  (let ((file-path (buffer-file-name)))
+  (let ((file-path (if (eq major-mode 'dired-mode)
+                       (dired-get-file-for-visit)
+                     (buffer-file-name))))
     (cond
      ((system-is-mswindows) (w32-shell-execute "open" (replace-regexp-in-string "/" "\\" file-path)))
      ((system-is-mac) (shell-command (format "open \"%s\"" file-path)))
      ((system-is-linux) (let ((process-connection-type nil))
                           (start-process "" nil "xdg-open" file-path)))
      )))
+
+(defun spacemacs/next-error (&optional n reset)
+  "Dispatch to flycheck or standard emacs error."
+  (interactive "P")
+  (if (and (boundp 'flycheck-mode)
+           (symbol-value flycheck-mode))
+      (call-interactively 'flycheck-next-error)
+    (call-interactively 'next-error)))
+
+(defun spacemacs/previous-error (&optional n reset)
+  "Dispatch to flycheck or standard emacs error."
+  (interactive "P")
+  (if (and (boundp 'flycheck-mode)
+           (symbol-value flycheck-mode))
+      (call-interactively 'flycheck-previous-error)
+    (call-interactively 'previous-error)))
+
+(defun switch-to-minibuffer-window ()
+  "switch to minibuffer window (if active)"
+  (interactive)
+  (when (active-minibuffer-window)
+    (select-window (active-minibuffer-window))))
+
+(defun comint-clear-buffer ()
+  (interactive)
+  (let ((comint-buffer-maximum-size 0))
+    (comint-truncate-buffer)))

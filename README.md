@@ -25,6 +25,7 @@
 - [Install](#install)
 - [Update](#update)
     - [Update notification](#update-notification)
+    - [Rollback](#rollback)
 - [Configuration](#configuration)
     - [Configuration layers](#configuration-layers)
     - [Dotfile (.spacemacs)](#dotfile-spacemacs)
@@ -68,7 +69,7 @@ following:
 - [Elixir][]
 - [Haskell][]
 - [JavaScript][]
-- LaTex
+- [LaTeX][]
 - [Python][]
 - [R][]
 - [Ruby][]
@@ -178,13 +179,8 @@ See the [troubleshooting][troubleshoot] guide if you have any issues.
 
 Spacemacs currently requires manual updates using the following procedure:
 
-1. Update Emacs packages.
-  1. Open the package list using `<SPC> a P` or `M-x paradox-list-packages`
-  2. Mark all packages for updating by pressing `U`, and
-  3. install them with `x`.
-
-  [See the documentation][using_package_buf] for more information about how to use
-  the package list.
+1. Update Emacs packages by clicking (press `RET`) on the `[Update]` link of
+the starting page
 
 2. Close Emacs and update the git repository:
 
@@ -208,6 +204,18 @@ version of `Spacemacs` is available.
 
 **Note:**
 Update of `Spacemacs` by clicking on the indicator will be implemented _soon_.
+
+## Rollback
+
+You can rollback ELPA packages to a previous version if anything went wrong
+during an update.
+
+To rollback to a previous state click (press `RET`) on the `[Rollback]`
+link of the startup page and choose a rollback slot.
+
+Rollback slot names are dates with the following format `YYYY-MM-DD_HH.MM.SS`.
+The date corresponds to the date of an update. The most recent slots are
+listed first.
 
 # Configuration
 
@@ -353,39 +361,39 @@ first.
 The version is displayed on the upper right corner of the loading screen. It
 is also possible to display the version with <kbd>SPC f e v</kbd>.
 
-2. **Why installed packages with package-install are automatically deleted by
+2. **Why are packages installed with package-install automatically deleted by
 Spacemacs when it starts ?**
 To declare new packages you have to create a new configuration layer, see
 the quick start guide [here](#configuration).
 
 3. **The Spacemacs banner is ugly, what should I do ?**
-Install the default font supported by Spacemacs or choose a fixed witdh font.
+Install the default font supported by Spacemacs or choose a fixed width font.
 More information in the [font section][] of the documentation.
 
 4. **The powerline separators are ugly, how can I fix them ?**
-Use the property `:powerline-offset` of the variable
+Use the property `:powerline-scale` of the variable
 `dotspacemacs-default-font`. More information in the [font section][]
 of the documentation.
 
-5. **Why the powerline has no arrows in terminal even with a patched font ?**
-Emacs powerline implementation does not use patched fonts. There exist currently
-no mode-lines in Emacs that support patched font.
+5. **Why don't the powerline arrows show in the terminal, even with a patched font ?**
+Emacs powerline implementation does not use patched fonts. Currently there are
+no mode-lines in Emacs that support patched fonts.
 The corresponding feature request for the powerline can be found
 [here][pw-patched-fonts].
 
 6. **The powerline separators have no anti-aliasing, what can I do ?**
 Emacs powerline uses XMP images to draw the separators. Enabling anti-aliasing
 may not be a trivial task so unfortunately you'll have to live with it.
-Nevertheless it exists a [large number of different separators][powerline-seps]
-and you can try to setup a different one with less aliasing (arrows for
+Nevertheless there exist a [large number of different separators][powerline-seps] --
+you can try to set up a different one with less aliasing (arrows for
 instance), alternatively you can disable them (note that the tilde characters
 on buffer empty lines have the same limitations).
 
 ## Windows
 
-1. **Why the fonts on Windows looks so crappy ?**
+1. **Why do the fonts on Windows looks so crappy ?**
 You can install [MacType][] on Windows to get very nice looking fonts. It is
-also recommended to disable the smooth scrolling on Windows.
+also recommended to disable smooth scrolling on Windows.
 
 2. **How to fix the error: The directory ~/.emacs.d/server is unsafe ?**
 Change the owner of the directory `~/.emacs.d/server`:
@@ -397,7 +405,7 @@ Change the owner of the directory `~/.emacs.d/server`:
 
 ## OS X
 
-1. **Why the powerline colors are not correct on OS X ?**
+1. **Why are the powerline colors not correct on OS X ?**
 This is a [known issue][powerline-srgb-issue] as of Emacs 24.4 due to
 `ns-use-srgb-colorspace` defaulting to true. It is recommended to use
 the [emacs-mac-port][] build. See the [install OSX section][] for more
@@ -441,6 +449,7 @@ info on this.
 [homebrew]: https://github.com/Homebrew/homebrew
 [Elixir]: contrib/lang/erlang-elixir
 [Haskell]: contrib/lang/haskell
+[LaTeX]: contrib/auctex
 [JavaScript]: contrib/lang/javascript
 [Python]: contrib/lang/python
 [R]: contrib/lang/ess

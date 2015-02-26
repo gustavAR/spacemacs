@@ -9,6 +9,9 @@
 ;; This file is not part of GNU Emacs.
 ;;
 ;;; License: GPLv3
+(defconst spacemacs-buffer-name "*spacemacs*"
+  "The name of the spacemacs buffer.")
+
 (defun spacemacs//insert-banner ()
   "Choose a banner and insert in spacemacs buffer.
 
@@ -28,7 +31,8 @@ Doge special banner can be reachable via `999', `doge' or `random*'.
       (spacemacs/message (format "Banner: %s" banner))
       (insert-file-contents banner)
       (spacemacs//inject-version-in-buffer)
-      (spacemacs/insert-buttons))))
+      (spacemacs/insert-buttons)
+      (spacemacs//redisplay))))
 
 (defun spacemacs//choose-random-banner (&optional all)
   "Return the full path of a banner chosen randomly.
@@ -88,39 +92,46 @@ buffer, right justified."
   "Display LOADING-TITLE with trailing dots of max length
 SPACEMACS-TITLE-LENGTH. New loading title is displayed by chunk
 of size LOADING-DOTS-CHUNK-THRESHOLD."
-  (setq spacemacs-loading-counter (1+ spacemacs-loading-counter))
-  (if (>= spacemacs-loading-counter spacemacs-loading-dots-chunk-threshold)
-      (progn
-        (setq spacemacs-loading-counter 0)
-        (let ((i 0))
-          (while (< i spacemacs-loading-dots-chunk-size)
-            (setq spacemacs-loading-text (concat spacemacs-loading-text "."))
-            (setq i (1+ i))))
-        (spacemacs/replace-last-line-of-buffer spacemacs-loading-text)
-        (redisplay))))
+  (when dotspacemacs-loading-progress-bar
+    (setq spacemacs-loading-counter (1+ spacemacs-loading-counter))
+    (when (>= spacemacs-loading-counter spacemacs-loading-dots-chunk-threshold)
+      (setq spacemacs-loading-counter 0)
+      (let ((i 0))
+        (while (< i spacemacs-loading-dots-chunk-size)
+          (setq spacemacs-loading-text (concat spacemacs-loading-text "."))
+          (setq i (1+ i))))
+      (spacemacs/replace-last-line-of-buffer spacemacs-loading-text)
+      (spacemacs//redisplay))))
 
 (defun spacemacs/insert-buttons ()
   (goto-char (point-max))
-  (insert "   ")
-  (insert-button "Homepage" 'action
+  (insert "      ")
+  (insert-button "[Homepage]" 'action
                  (lambda (b) (browse-url "https://github.com/syl20bnr/spacemacs"))
                  'follow-link t)
   (insert " ")
-  (insert-button "Documentation" 'action
+  (insert-button "[Documentation]" 'action
                  (lambda (b) (browse-url "https://github.com/syl20bnr/spacemacs/blob/master/doc/DOCUMENTATION.md"))
                  'follow-link t)
   (insert " ")
-  (insert-button "Gitter Chat" 'action
+  (insert-button "[Gitter Chat]" 'action
                  (lambda (b) (browse-url "https://gitter.im/syl20bnr/spacemacs"))
                  'follow-link t)
   (insert " ")
-  (insert-button "Messages Buffer" 'action (lambda (b) (switch-to-buffer "*Messages*")) 'follow-link t)
+  (insert-button "[Update]" 'action
+                 (lambda (b) (configuration-layer/update-packages)) 'follow-link t)
   (insert " ")
-  (insert-button "Spacemacs Folder" 'action (lambda (b) (find-file user-emacs-directory)) 'follow-link t)
-  (insert "\n")
-  (insert "                            ")
-  (insert-button "Update Spacemacs" 'action (lambda (b) (configuration-layer/update-packages)) 'follow-link t)
+  (insert-button "[Rollback]" 'action
+                 (lambda (b) (call-interactively 'configuration-layer/rollback)) 'follow-link t)
   (insert "\n\n")
   )
+
+(defun spacemacs/goto-link-line ()
+  "Move the point to the beginning of the link line."
+  (interactive)
+  (with-current-buffer spacemacs-buffer-name
+    (goto-char (point-min))
+    (re-search-forward "Homepage")
+    (beginning-of-line)))
 
 (provide 'core-spacemacs-buffer)

@@ -5,7 +5,7 @@
 ;; Author: Sylvain Benner <sylvain.benner@gmail.com>
 ;; Keywords: convenience editing evil
 ;; Created: 22 Oct 2014
-;; Version: 2.07
+;; Version: 2.10
 ;; Package-Requires: ((emacs "24") (evil "1.0.9"))
 ;; URL: https://github.com/syl20bnr/evil-escape
 
@@ -91,6 +91,12 @@ This variable is used to restore the original function bound to the
 first key of the escape key sequence when `evil-escape'
 mode is disabled.")
 
+(defvar evil-escape-lisp-state-shadowed-func nil
+  "Original function of `evil-lisp-state-map' shadowed by `evil-escape'.
+This variable is used to restore the original function bound to the
+first key of the escape key sequence when `evil-escape'
+mode is disabled.")
+
 ;;;###autoload
 (define-minor-mode evil-escape-mode
   "Buffer-local minor mode to escape insert state and everythin else
@@ -155,13 +161,9 @@ with a key sequence."
         (lookup-key evil-motion-state-map (evil-escape--first-key)))
   ;; evil states
   ;; insert state
-  (let ((insert-func (lambda (key) (interactive)
-                       (cond ((eq 'term-mode major-mode)
-                              (call-interactively 'term-send-raw))
-                             (t (evil-escape--default-insert-func key))))))
-    (eval `(evil-escape-define-escape "insert-state" evil-insert-state-map evil-normal-state
-                                      :insert-func ,insert-func
-                                      :delete-func evil-escape--default-delete-func)))
+  (eval `(evil-escape-define-escape "insert-state" evil-insert-state-map evil-normal-state
+                                    :insert-func evil-escape--insert-state-insert-func
+                                    :delete-func evil-escape--default-delete-func))
   ;; emacs state
   (let ((exit-func (lambda () (interactive)
                      (cond ((string-match "magit" (symbol-name major-mode))
@@ -207,7 +209,12 @@ with a key sequence."
                                     :delete-func isearch-delete-char))
   ;; lisp state if installed
   (eval-after-load 'evil-lisp-state
-    '(eval '(evil-escape-define-escape "lisp-state" evil-lisp-state-map evil-normal-state)))
+    '(progn
+       (setq evil-escape-lisp-state-shadowed-func
+             (lookup-key evil-lisp-state-map (evil-escape--first-key)))
+       (eval `(evil-escape-define-escape "lisp-state" evil-lisp-state-map
+                                         evil-normal-state
+                                         :shadowed-func ,evil-escape-lisp-state-shadowed-func))))
   ;; iedit state if installed
   (eval-after-load 'evil-iedit-state
     '(progn
@@ -231,8 +238,9 @@ with a key sequence."
         (define-key isearch-mode-map
           (kbd first-key) evil-escape-isearch-shadowed-func))
     ;; list state
-    (eval-after-load 'evil-lisp-state
-      '(define-key evil-lisp-state-map (kbd first-key) nil))
+    (if evil-escape-lisp-state-shadowed-func
+        (define-key evil-lisp-state-map
+          (kbd first-key) evil-escape-lisp-state-shadowed-func))
     ;; iedit state
     (eval-after-load 'evil-iedit-state
       '(progn (define-key evil-iedit-state-map (kbd first-key) nil)
@@ -241,6 +249,13 @@ with a key sequence."
 (defun evil-escape--default-insert-func (key)
   "Insert KEY in current buffer if not read only."
   (when (not buffer-read-only) (insert key)))
+
+(defun evil-escape--insert-state-insert-func (key)
+  "Take care of term-mode."
+  (interactive)
+  (cond ((eq 'term-mode major-mode)
+         (call-interactively 'term-send-raw))
+        (t (evil-escape--default-insert-func key))))
 
 (defun evil-escape--isearch-insert-func (key)
   "Insert KEY in current buffer if not read only."
@@ -320,6 +335,8 @@ DELETE-FUNC when calling CALLBACK. "
         ;; remove the f character
         (if delete-func (funcall delete-func))
         (set-buffer-modified-p modified)
+        ;; disable any running transient map first
+        (setq overriding-terminal-local-map nil)
         (call-interactively callback))
        (t ; otherwise
         (evil-escape--setup-emacs-state-passthrough)

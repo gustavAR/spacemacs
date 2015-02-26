@@ -41,6 +41,13 @@
   (expand-file-name (concat user-emacs-directory "private/"))
   "Spacemacs private layers base directory.")
 
+(defconst configuration-layer-rollback-directory
+  (expand-file-name (concat spacemacs-cache-directory ".rollback/"))
+  "Spacemacs rollback directory.")
+
+(defconst configuration-layer-rollback-info "rollback-info"
+  "Spacemacs rollback information file.")
+
 (defvar configuration-layer-layers '()
   "Alist of declared configuration layers.")
 
@@ -164,12 +171,15 @@ for that layer."
           (push (cons (intern f) dir) result)))
       result)))
 
-(defun configuration-layer/declare-all-layers ()
+(defun configuration-layer/declare-layers ()
   "Declare default layers and user layers from the dotfile by filling the
 `configuration-layer-layers' variable."
   (setq configuration-layer-paths (configuration-layer//discover-layers))
-  (push (configuration-layer//declare-layer 'spacemacs)
-        configuration-layer-layers)
+  (if (eq 'all dotspacemacs-configuration-layers)
+      (setq dotspacemacs-configuration-layers
+            (ht-keys configuration-layer-paths))
+    (push (configuration-layer//declare-layer 'spacemacs)
+          configuration-layer-layers))
   (mapc (lambda (layer) (push layer configuration-layer-layers))
         (configuration-layer//declare-layers
          dotspacemacs-configuration-layers)))
@@ -212,8 +222,12 @@ the following keys:
                                var)))))))
 
 (defun configuration-layer/package-declaredp (pkg)
-  "Return non-nil if PKG symbol corresponds to a used package."
+  "Return non-nil if PKG symbol corresponds to a declared package."
   (ht-contains? configuration-layer-all-packages pkg))
+
+(defun configuration-layer/layer-declaredp (layer)
+  "Return non-nil if LAYER symbol corresponds to a declared layer."
+  (not (null (assq layer configuration-layer-layers))))
 
 (defun configuration-layer/get-layers-list ()
   "Return a list of all discovered layer symbols."
@@ -256,7 +270,8 @@ the following keys:
     ;; install and initialize packages and extensions
     (configuration-layer//initialize-extensions configuration-layer-all-pre-extensions-sorted t)
     (configuration-layer//install-packages)
-    (spacemacs/append-to-buffer spacemacs-loading-text)
+    (when dotspacemacs-loading-progress-bar
+      (spacemacs/append-to-buffer spacemacs-loading-text))
     (configuration-layer//initialize-packages)
     (configuration-layer//initialize-extensions configuration-layer-all-post-extensions-sorted)
     ;; restore warning level before initialization
@@ -369,7 +384,7 @@ If PRE is non nil then `layer-pre-extensions' is read instead of
                    not-installed-count))
           (spacemacs/append-to-buffer
            "--> fetching new package repository indexes...\n")
-          (redisplay)
+          (spacemacs//redisplay)
           (package-refresh-contents)
           (setq installed-count 0)
           (dolist (pkg not-installed)
@@ -377,9 +392,7 @@ If PRE is non nil then `layer-pre-extensions' is read instead of
             (spacemacs/replace-last-line-of-buffer
              (format "--> installing %s:%s... [%s/%s]"
                      (ht-get configuration-layer-all-packages pkg)
-                     pkg
-                     installed-count
-                     not-installed-count) t)
+                     pkg installed-count not-installed-count) t)
             (unless (package-installed-p pkg)
               (if (not (assq pkg package-archive-contents))
                   (spacemacs/append-to-buffer
@@ -389,8 +402,32 @@ If PRE is non nil then `layer-pre-extensions' is read instead of
                               pkg))
                   (configuration-layer//activate-package (car dep)))
                 (package-install pkg)))
-            (redisplay))
+            (spacemacs//redisplay))
           (spacemacs/append-to-buffer "\n")))))
+
+(defun configuration-layer//get-packages-to-update (packages)
+  "Return a list of packages to update given a list of PACKAGES."
+  (when packages
+    (let (result)
+      (dolist (pkg packages)
+        ;; recursively check dependencies
+        (let* ((deps
+                (configuration-layer//get-package-dependencies-from-archive pkg))
+               (update-deps
+                (when deps (configuration-layer//get-packages-to-update
+                            (mapcar 'car deps)))))
+          (when update-deps
+            (setq result (append update-deps result))))
+        (let ((installed-version (configuration-layer//get-package-version-string pkg))
+              (newest-version (configuration-layer//get-latest-package-version-string
+                               pkg)))
+          ;; (message "package - %s" pkg)
+          ;; (message "installed - %s" installed-version)
+          ;; (message "latest - %s" newest-version)
+          (unless (or (null installed-version)
+                      (version<= newest-version installed-version))
+            (add-to-list 'result pkg t))))
+      (delete-dups result))))
 
 (defun configuration-layer/update-packages ()
   "Upgrade elpa packages"
@@ -399,35 +436,131 @@ If PRE is non nil then `layer-pre-extensions' is read instead of
    "\nUpdating Spacemacs... (for now only ELPA packages are updated)\n")
   (spacemacs/append-to-buffer
    "--> fetching new package repository indexes...\n")
-  (redisplay)
+  (spacemacs//redisplay)
   (package-refresh-contents)
-  (setq upgraded-count 0)
-  (dolist (pkg configuration-layer-all-packages-sorted)
-    ;; do not stop with errors on builtins and compilation fails
-    (ignore-errors
-      (let ((installed-version (configuration-layer//get-package-version pkg))
-            (newest-version (configuration-layer//get-latest-package-version pkg)))
-        ;; (message "package - %s" pkg)
-        ;; (message "installed - %s" installed-version)
-        ;; (message "latest - %s" newest-version)
-        (unless (version<= newest-version installed-version)
-          (progn 
+  (let* ((update-packages (configuration-layer//get-packages-to-update
+                           configuration-layer-all-packages-sorted))
+         (date (format-time-string "%y-%m-%d_%H.%M.%S"))
+         (rollback-dir (expand-file-name
+                        (concat configuration-layer-rollback-directory
+                                (file-name-as-directory date))))
+         (upgrade-count (length update-packages))
+         (upgraded-count 0)
+         (update-packages-alist))
+    (if (> upgrade-count 0)
+        (if (not (yes-or-no-p (format (concat "%s package(s) to update, "
+                                              "do you want to continue ? ")
+                                      upgrade-count)))
+            (spacemacs/append-to-buffer
+             "Packages update has been cancelled.\n")
+          ;; backup the package directory and construct an alist
+          ;; variable to be cached for easy update and rollback
+          (spacemacs/replace-last-line-of-buffer
+           "--> performing backup of package(s) to update...\n" t)
+          (spacemacs//redisplay)
+          (dolist (pkg update-packages)
+            (let* ((src-dir (configuration-layer//get-package-directory pkg))
+                   (dest-dir (expand-file-name
+                              (concat rollback-dir
+                                      (file-name-as-directory
+                                       (file-name-nondirectory src-dir))))))
+              (copy-directory src-dir dest-dir 'keeptime 'create 'copy-content)
+              (push (cons pkg (file-name-nondirectory src-dir))
+                    update-packages-alist)))
+          (spacemacs/dump-vars-to-file
+           '(update-packages-alist)
+           (expand-file-name (concat rollback-dir
+                                     configuration-layer-rollback-info)))
+          (dolist (pkg update-packages)
             (setq upgraded-count (1+ upgraded-count))
             (spacemacs/replace-last-line-of-buffer
-             (format "--> updating packge %s:%s (%s)..."
-                     (ht-get configuration-layer-all-packages pkg)
-                     pkg
-                     upgraded-count
-                     ))
-            (redisplay)
+             (format "--> updating package %s... [%s/%s]"
+                     pkg upgraded-count upgrade-count) t)
+            (spacemacs//redisplay)
             (configuration-layer//package-delete pkg)
-            (package-install pkg)
-            )))))
-  (spacemacs/append-to-buffer
-   (format (concat (if (> upgraded-count 0) "\n" "")
-                   "--> %s packages updated.\n")
-           upgraded-count))
-  (redisplay))
+            (condition-case err (package-install pkg)
+              ('error
+               (message (format
+                         (concat "An error occurred during the update of "
+                                 "this package %s, retrying one more time...")
+                         err))
+               (package-install pkg)))
+            (when (version< emacs-version "24.3.50")
+              ;; explicitly force activation
+              (setq package-activated-list (delq pkg package-activated-list))
+              (configuration-layer//activate-package pkg)))
+          (spacemacs/append-to-buffer
+           (format "\n--> %s packages updated.\n" upgraded-count))
+          (spacemacs/append-to-buffer
+           "\nEmacs has to be restarted for the changes to take effect.\n")
+          (spacemacs//redisplay))
+      (spacemacs/append-to-buffer "--> All packages are up to date.\n")
+      (spacemacs//redisplay))))
+
+(defun configuration-layer//ido-candidate-rollback-slot ()
+  "Return a list of candidates to select a rollback slot."
+  (let ((rolldir configuration-layer-rollback-directory))
+    (when (file-exists-p rolldir)
+      (reverse
+       (delq nil (mapcar
+                  (lambda (x)
+                    (when (not (or (string= "." x) (string= ".." x)))
+                      (let ((p (length (directory-files (file-name-as-directory
+                                                         (concat rolldir x))))))
+                        ;; -3 for . .. and rollback-info
+                        (format "%s (%s packages)" x (- p 3)))))
+                  (directory-files rolldir)))))))
+
+(defun configuration-layer/rollback (slot)
+  "Rollback all the packages in the given SLOT.
+If called interactively and SLOT is nil then an ido buffers appears
+to select one."
+  (interactive
+   (list
+    (if (boundp 'slot) slot
+      (let ((candidates (configuration-layer//ido-candidate-rollback-slot)))
+        (when candidates
+          (ido-completing-read "Rollback slots (most recent are first): "
+                               candidates))))))
+  (if (not slot)
+      (message "No rollback slot available.")
+    (string-match "^\\(.+?\\)\s.*$" slot)
+    (let* ((slot-dir (match-string 1 slot))
+           (rollback-dir (file-name-as-directory
+                          (concat configuration-layer-rollback-directory
+                                  (file-name-as-directory slot-dir))))
+           (info-file (expand-file-name
+                       (concat rollback-dir
+                               configuration-layer-rollback-info))))
+      (spacemacs/append-to-buffer
+       (format "\nRollbacking ELPA packages from slot %s...\n" slot-dir))
+      (load-file info-file)
+      (let ((rollback-count (length update-packages-alist))
+            (rollbacked-count 0))
+        (spacemacs/append-to-buffer
+         (format "Found %s package(s) to rollback...\n" rollback-count))
+        (spacemacs//redisplay)
+        (dolist (apkg update-packages-alist)
+          (let* ((pkg (car apkg))
+                 (pkg-dir-name (cdr apkg))
+                 (elpa-dir (concat user-emacs-directory "elpa/"))
+                 (src-dir (expand-file-name
+                           (concat rollback-dir (file-name-as-directory
+                                                 pkg-dir-name))))
+                 (dest-dir (expand-file-name
+                            (concat elpa-dir (file-name-as-directory
+                                              pkg-dir-name)))))
+            (setq rollbacked-count (1+ rollbacked-count))
+            (spacemacs/replace-last-line-of-buffer
+             (format "--> rollbacking package %s... [%s/%s]"
+                     pkg rollbacked-count rollback-count) t)
+            (spacemacs//redisplay)
+            (configuration-layer//package-delete pkg)
+            (copy-directory src-dir dest-dir 'keeptime 'create 'copy-content)))
+        (spacemacs/append-to-buffer
+         (format "\n--> %s packages rollbacked.\n" rollbacked-count))
+        (spacemacs/append-to-buffer
+         "\nEmacs has to be restarted for the changes to take effect.\n")))))
 
 (defun configuration-layer//initialize-packages ()
   "Initialize all the declared packages."
@@ -437,18 +570,19 @@ If PRE is non nil then `layer-pre-extensions' is read instead of
 
 (defun configuration-layer//initialize-package (pkg layers)
   "Initialize the package PKG from the configuration layers LAYERS."
-  (dolist (layer layers)
-    (let* ((init-func (intern (format "%s/init-%s" layer pkg))))
-      (spacemacs/loading-animation)
-      (if (and (package-installed-p pkg) (fboundp init-func))
-          (progn
-            (spacemacs/message "Package: Initializing %s:%s..." layer pkg)
-            (configuration-layer//activate-package pkg)
-            (funcall init-func))))))
+  (let (initializedp)
+   (dolist (layer layers)
+     (let* ((init-func (intern (format "%s/init-%s" layer pkg))))
+       (when (and (package-installed-p pkg) (fboundp init-func))
+         (spacemacs/message "Package: Initializing %s:%s..." layer pkg)
+         (configuration-layer//activate-package pkg)
+         (funcall init-func)
+         (setq initializedp t))))
+   (when initializedp) (spacemacs/loading-animation)))
 
 (defun configuration-layer//activate-package (pkg)
   "Activate PKG."
-  (if (version< emacs-version "24.4")
+  (if (version< emacs-version "24.3.50")
       ;; fake version list to always activate the package
       (package-activate pkg '(0 0 0 0))
     (package-activate pkg)))
@@ -537,19 +671,33 @@ deleted safely."
                   :initial-value t))
       (not (ht-contains? configuration-layer-all-packages pkg)))))
 
-(defun configuration-layer//get-package-dependencies (package)
-  "Return the dependencies alist for PACKAGE."
-  (let ((pkg (assq package package-alist)))
+(defun configuration-layer//get-package-directory (pkg)
+  "Return the directory path for PKG."
+  (let ((pkg-desc (assq pkg package-alist)))
     (cond
-     ((version< emacs-version "24.4") (aref (cdr pkg) 1))
-     (t (package-desc-reqs (cadr pkg))))))
+     ((version< emacs-version "24.3.50")
+      (let* ((version (aref (cdr pkg-desc) 0))
+             (elpa-dir (concat user-emacs-directory "elpa/"))
+             (pkg-dir-name (format "%s-%s.%s"
+                                   (symbol-name pkg)
+                                   (car version)
+                                   (cadr version))))
+        (expand-file-name (concat elpa-dir pkg-dir-name))))
+     (t (package-desc-dir (cadr pkg-desc))))))
+
+(defun configuration-layer//get-package-dependencies (pkg)
+  "Return the dependencies alist for PKG."
+  (let ((pkg-desc (assq pkg package-alist)))
+    (cond
+     ((version< emacs-version "24.3.50") (aref (cdr pkg-desc) 1))
+     (t (package-desc-reqs (cadr pkg-desc))))))
 
 (defun configuration-layer//get-package-dependencies-from-archive (pkg)
   "Return the dependencies alist for a PKG from the archive data."
-  (let* ((arch (assq pkg package-archive-contents))
-         (reqs (when arch (if (version< emacs-version "24.4")
-                              (aref (cdr arch) 1)
-                            (package-desc-reqs (cadr arch))))))
+  (let* ((pkg-arch (assq pkg package-archive-contents))
+         (reqs (when pkg-arch (if (version< emacs-version "24.3.50")
+                              (aref (cdr pkg-arch) 1)
+                            (package-desc-reqs (cadr pkg-arch))))))
     ;; recursively get the requirements of reqs
     (dolist (req reqs)
       (let* ((pkg2 (car req))
@@ -557,28 +705,45 @@ deleted safely."
         (when reqs2 (setq reqs (append reqs2 reqs)))))
     reqs))
 
-(defun configuration-layer//get-package-version (package)
-  "Return the version string for PACKAGE."
-  (let ((pkg (or (assq package package-alist)
-                 (assq package package--builtins))))
-    (cond
-     ((version< emacs-version "24.4") (package-version-join (aref (cdr pkg) 0)))
-     (t (package-version-join (package-desc-version (cadr pkg)))))))
+(defun configuration-layer//get-package-version-string (pkg)
+  "Return the version string for PKG."
+  (let ((pkg-desc (assq pkg package-alist)))
+    (when pkg-desc
+      (cond
+       ((version< emacs-version "24.3.50") (package-version-join
+                                            (aref (cdr pkg-desc) 0)))
+       (t (package-version-join (package-desc-version (cadr pkg-desc))))))))
 
-(defun configuration-layer//get-latest-package-version (package)
-  "Return the version string for PACKAGE."
-  (let ((pkg (assq package package-archive-contents)))
-    (cond
-     ((version< emacs-version "24.4") (package-version-join (aref (cdr pkg) 0)))
-     (t (package-version-join (package-desc-version (cadr pkg)))))))
+(defun configuration-layer//get-package-version (pkg)
+  "Return the version list for PKG."
+  (let ((version-string (configuration-layer//get-package-version-string pkg)))
+    (unless (string-empty-p version-string)
+      (version-to-list version-string))))
 
-(defun configuration-layer//package-delete (package)
-  "Delete the passed PACKAGE."
+(defun configuration-layer//get-latest-package-version-string (pkg)
+  "Return the version string for PKG."
+  (let ((pkg-arch (assq pkg package-archive-contents)))
+    (when pkg-arch
+      (cond
+       ((version< emacs-version "24.3.50") (package-version-join
+                                            (aref (cdr pkg-arch) 0)))
+       (t (package-version-join (package-desc-version (cadr pkg-arch))))))))
+
+(defun configuration-layer//get-latest-package-version (pkg)
+  "Return the versio list for PKG."
+  (let ((version-string
+         (configuration-layer//get-latest-package-version-string pkg)))
+    (unless (string-empty-p version-string)
+      (version-to-list version-string))))
+
+(defun configuration-layer//package-delete (pkg)
+  "Delete the passed PKG."
   (cond
-   ((version< emacs-version "24.4")
-    (package-delete (symbol-name package)
-                    (configuration-layer//get-package-version package)))
-   (t (package-delete (cadr (assq package package-alist))))))
+   ((version< emacs-version "24.3.50")
+    (let ((v (configuration-layer//get-package-version-string pkg)))
+      (when v (package-delete (symbol-name pkg) v))))
+   (t (let ((p (cadr (assq pkg package-alist))))
+        (when p (package-delete p))))))
 
 (defun configuration-layer/delete-orphan-packages ()
   "Delete all the orphan packages."
@@ -594,7 +759,8 @@ deleted safely."
     (if orphans
         (progn
           ;; for the loading dot bar
-          (spacemacs/append-to-buffer "OK!\n")
+          (when dotspacemacs-loading-progress-bar
+            (spacemacs/append-to-buffer "OK!\n"))
           (spacemacs/append-to-buffer
            (format "Found %s orphan package(s) to delete...\n"
                    orphans-count))
@@ -607,23 +773,28 @@ deleted safely."
                      deleted-count
                      orphans-count) t)
             (configuration-layer//package-delete orphan)
-            (redisplay))
+            (spacemacs//redisplay))
           (spacemacs/append-to-buffer "\n"))
       (spacemacs/message "No orphan package to delete."))))
 
 (defun configuration-layer/setup-after-init-hook ()
   "Add post init processing."
-  (add-hook 'after-init-hook
-            (lambda ()
-              (spacemacs/append-to-buffer (format "%s\n" spacemacs-loading-done-text))
-              ;; from jwiegley
-              ;; https://github.com/jwiegley/dot-emacs/blob/master/init.el
-              (let ((elapsed (float-time
-                              (time-subtract (current-time) emacs-start-time))))
-                (spacemacs/append-to-buffer
-                 (format "[%s packages loaded in %.3fs]\n"
-                         (configuration-layer//initialized-packages-count)
-                         elapsed)))
-              (spacemacs/check-for-new-version spacemacs-version-check-interval))))
+  (add-hook
+   'after-init-hook
+   (lambda ()
+     ;; Ultimate configuration decisions are given to the user who can defined
+     ;; them in his/her ~/.spacemacs file
+     (dotspacemacs|call-func dotspacemacs/config "Executing user config...")
+     (when dotspacemacs-loading-progress-bar
+       (spacemacs/append-to-buffer (format "%s\n" spacemacs-loading-done-text)))
+     ;; from jwiegley
+     ;; https://github.com/jwiegley/dot-emacs/blob/master/init.el
+     (let ((elapsed (float-time
+                     (time-subtract (current-time) emacs-start-time))))
+       (spacemacs/append-to-buffer
+        (format "[%s packages loaded in %.3fs]\n"
+                (configuration-layer//initialized-packages-count)
+                elapsed)))
+     (spacemacs/check-for-new-version spacemacs-version-check-interval))))
 
 (provide 'core-configuration-layer)

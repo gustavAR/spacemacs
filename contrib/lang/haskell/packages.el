@@ -12,20 +12,30 @@
 
 (defvar haskell-packages
   '(
+    company-ghc
     flycheck
     flycheck-haskell
     ghc
     haskell-mode
     hi2
+    shm
     ))
-
-;; Only load company-ghc if company-mode is enabled
-(when (member 'company-mode dotspacemacs-configuration-layers)
-  (add-to-list 'haskell-packages 'company-ghc))
 
 (defun haskell/init-flycheck ()
   ;;(add-hook 'haskell-mode-hook 'flycheck-mode))
   (add-hook 'flycheck-mode-hook 'flycheck-haskell-setup))
+
+(defun haskell/init-shm ()
+  (use-package shm
+    :defer t
+    :if haskell-enable-shm-support
+    :init
+    (add-hook 'haskell-mode-hook 'structured-haskell-mode)
+    :config
+    (progn
+
+      )))
+
 
 (defun haskell/init-haskell-mode ()
   (require 'haskell-yas)
@@ -35,8 +45,7 @@
     (progn
       ;; Customization
       (custom-set-variables
-       ;; Use cabal-repl for the GHCi session. Ensures our dependencies are in scope.
-       ;; cabal-dev is deprecated
+
        '(haskell-process-type 'auto)
 
        ;; Use notify.el (if you have it installed) at the end of running
@@ -81,11 +90,9 @@
       ;; ;; use "mh" as prefix for documentation commands
       ;; (setq spacemacs/key-binding-prefixes '(("mh" . "Haskell Documentation")))
 
-      
       (evil-leader/set-key-for-mode 'haskell-mode
         "mt"   'haskell-process-do-type
         "mi"   'haskell-process-do-info
-        "mu"   'haskell-mode-find-uses
         "mgg"  'haskell-mode-jump-to-def-or-tag
         "mf"   'haskell-mode-stylish-buffer
 
@@ -112,6 +119,8 @@
         "mda"  'haskell-debug/abandon
         "mdr"  'haskell-debug/refresh
         )
+
+
       ;; Switch back to editor from REPL
       (evil-leader/set-key-for-mode 'interactive-haskell-mode
         "msS"  'haskell-interactive-switch
@@ -140,9 +149,11 @@
 
       ;; Haskell main editing mode key bindings.
       (defun haskell-hook ()
-        (lambda () (ghc-init))
+        (ghc-init)
         ;; Use advanced indention
-        (turn-on-haskell-indentation)
+        (if (not haskell-enable-shm-support)
+            (turn-on-haskell-indentation)
+          )
 
         ;; Indent the below lines on columns after the current column.
         ;; Might need better bindings for spacemacs and OS X
@@ -158,19 +169,39 @@
 
       ;; Useful to have these keybindings for .cabal files, too.
       (defun haskell-cabal-hook ()
-        (define-key haskell-cabal-mode-map [?\C-c ?\C-z] 'haskell-interactive-switch)))))
+        (define-key haskell-cabal-mode-map [?\C-c ?\C-z] 'haskell-interactive-switch))
+
+      ;;GHCi-ng
+      (defun ghci-ng-setup()
+        (progn
+          ;; haskell-process-type is set to auto, so setup ghci-ng for either case
+          ;; if haskell-process-type == cabal-repl
+          (setq haskell-process-args-cabal-repl '("--ghc-option=-ferror-spans" "--with-ghc=ghci-ng"))
+          ;; if haskell-process-type == GHCi
+          (setq haskell-process-path-ghci "ghci-ng")
+
+          (evil-leader/set-key-for-mode 'haskell-mode
+            "mu"   'haskell-mode-find-uses
+            "mt"   'haskell-mode-show-type-at
+            "mgg"  'haskell-mode-goto-loc
+            ))
+        )
+
+      (if haskell-enable-ghci-ng-support
+          (ghci-ng-setup)))))
 
 (defun haskell/init-company-ghc ()
-  (use-package ghc
-    :init 
-    (add-to-list 'company-backends 'company-ghc)
-    (ghc-comp-init)
-    ))
+  (use-package company-ghc
+    :if (configuration-layer/layer-declaredp 'company-mode)
+    :init
+    (progn
+      (add-to-list 'company-backends (company-mode/backend-with-yas 'company-ghc)))))
 
 (defun haskell/init-hi2 ()
   (use-package hi2
     :diminish hi2-mode
     :commands turn-on-hi2
+    :if (not haskell-enable-shm-support)
     :init
     (add-hook 'haskell-mode-hook 'turn-on-hi2)
     :config

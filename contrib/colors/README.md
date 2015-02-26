@@ -9,6 +9,7 @@
     - [Description](#description)
     - [Install](#install)
         - [Enable rainbow-identifiers](#enable-rainbow-identifiers)
+        - [Enable Nyan cat](#enable-nyan-cat)
     - [Key bindings](#key-bindings)
         - [Rainbow Identifiers](#rainbow-identifiers)
         - [Rainbow Mode](#rainbow-mode)
@@ -20,6 +21,7 @@
 This layer colors your life with:
 - [rainbow identifiers][]
 - [rainbow mode][]
+- [nyan mode][]
 
 [rainbow identifiers][] mode will colorize each variables and functions with an
 almost unique color. The keywords and the declaration of function colors are
@@ -28,14 +30,14 @@ disabled in order to make the colorized variables and functions stand out.
 [rainbow mode][] displays strings representing colors with the color they
 represent as background.
 
+[nyan mode][] display a Nyan cat progress bar in the mode-line.
+
 ## Install
 
 To use this contribution add it to your `~/.spacemacs`
 
 ```elisp
-(setq-default dotspacemacs-configuration-layers '(colors)
-  "List of contribution to load."
-)
+(setq-default dotspacemacs-configuration-layers '(colors))
 ```
 
 ### Enable rainbow-identifiers
@@ -45,10 +47,26 @@ To enable the package `rainbow-identifiers` set the variable
 
 ```elisp
 (setq-default dotspacemacs-configuration-layers '(
-  (colors :variables
-          colors-enable-rainbow-identifiers t))
-  "List of contribution to load."
-)
+  (colors :variables colors-enable-rainbow-identifiers t)))
+```
+
+### Enable Nyan cat
+
+To enable the package `nyan-mode` set the variable
+`colors-enable-nyan-cat-progress-bar` to `t`:
+
+```elisp
+(setq-default dotspacemacs-configuration-layers '(
+  (colors :variables colors-enable-nyan-cat-progress-bar t)))
+```
+
+It may be handy to enable it only in a GUI, you can do it by using
+a quasi-quoted list:
+
+```elisp
+(setq-default dotspacemacs-configuration-layers
+  `((colors :variables
+            colors-enable-nyan-cat-progress-bar ,(display-graphic-p))))
 ```
 
 ## Key bindings
@@ -85,8 +103,15 @@ Any other key | leave the change mini-mode
 
     <SPC> t C c
 
+### Nyan Mode
+
+`nyan-mode` mode can be toggled on and off with:
+
+    <SPC> t m n
+
 Note that the toggle is local to the current buffer.
 
 [rainbow identifiers]: https://github.com/Fanael/rainbow-identifiers
 [rainbow mode]: https://julien.danjou.info/projects/emacs-packages
+[nyan mode]: https://github.com/syl20bnr/nyan-mode
 
