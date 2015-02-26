@@ -33,5 +33,12 @@
   (configuration-layer/setup-after-init-hook)
   ;; start a server for subsequent emacs clients
   (require 'server)
+  ;; Ignore warning about safety of directories :(
+  ;; Couldn't solve this by changing the owner of the directory
+  ;; (defun server-ensure-safe-dir (dir) "Noop" t)
   (unless (server-running-p)
-    (server-start)))
+  (when (eq window-system 'w32) 
+    (defun server-ensure-safe-dir (dir) "Noop" t) ; Suppress error "directory
+                                                  ; ~/.emacs.d/server is unsafe"
+                                                  ; on windows.
+    (server-start))))
