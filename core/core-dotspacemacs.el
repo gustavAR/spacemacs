@@ -28,8 +28,8 @@ Paths must have a trailing slash (ie. `~/.mycontribs/')")
   "List of configuration layers to load. If it is the symbol `all' instead
 of a list then all discovered layers will be installed.")
 
-(defvar dotspacemacs-themes '(solarized-light
-                              solarized-dark
+(defvar dotspacemacs-themes '(solarized-dark
+                              solarized-light
                               leuven
                               monokai
                               zenburn)
