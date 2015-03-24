@@ -20,6 +20,7 @@
                            ("gnu" . "http://elpa.gnu.org/packages/")
                            ("melpa" . "http://melpa.org/packages/")))
   ;; optimization, no need to activate all the packages so early
+  (setq package-enable-at-startup nil)
   (package-initialize 'noactivate)
   ;; Emacs 24.3 and above ships with python.el but in some Emacs 24.3.1 packages
   ;; for Ubuntu, python.el seems to be missing.
@@ -47,6 +48,10 @@
 
 (defconst configuration-layer-rollback-info "rollback-info"
   "Spacemacs rollback information file.")
+
+(defvar configuration-layer-error-count nil
+  "Non nil indicates the number of errors occurred during the
+installation of initialization.")
 
 (defvar configuration-layer-layers '()
   "Alist of declared configuration layers.")
@@ -276,8 +281,6 @@ the following keys:
     ;; install and initialize packages and extensions
     (configuration-layer//initialize-extensions configuration-layer-all-pre-extensions-sorted t)
     (configuration-layer//install-packages)
-    (when dotspacemacs-loading-progress-bar
-      (spacemacs/append-to-buffer spacemacs-loading-text))
     (configuration-layer//initialize-packages)
     (configuration-layer//initialize-extensions configuration-layer-all-post-extensions-sorted)
     ;; restore warning level before initialization
@@ -398,14 +401,20 @@ If PRE is non nil then `layer-pre-extensions' is read instead of
                      (ht-get configuration-layer-all-packages pkg)
                      pkg installed-count not-installed-count) t)
             (unless (package-installed-p pkg)
-              (if (not (assq pkg package-archive-contents))
-                  (spacemacs/append-to-buffer
-                   (format "\nPackage %s is unavailable. Is the package name misspelled?\n"
-                    pkg))
-                (dolist (dep (configuration-layer//get-package-dependencies-from-archive
-                              pkg))
-                  (configuration-layer//activate-package (car dep)))
-                (package-install pkg)))
+              (condition-case err
+                  (if (not (assq pkg package-archive-contents))
+                      (spacemacs/append-to-buffer
+                       (format "\nPackage %s is unavailable. Is the package name misspelled?\n"
+                               pkg))
+                    (dolist (dep (configuration-layer//get-package-dependencies-from-archive
+                                  pkg))
+                      (configuration-layer//activate-package (car dep)))
+                    (package-install pkg))
+                ('error
+                 (configuration-layer//set-error)
+                 (spacemacs/append-to-buffer
+                  (format (concat "An error occurred while installing %s "
+                                  "(error: %s)\n") pkg err)))))
             (spacemacs//redisplay))
           (spacemacs/append-to-buffer "\n")))))
 
@@ -574,15 +583,20 @@ to select one."
 
 (defun configuration-layer//initialize-package (pkg layers)
   "Initialize the package PKG from the configuration layers LAYERS."
-  (let (initializedp)
-   (dolist (layer layers)
-     (let* ((init-func (intern (format "%s/init-%s" layer pkg))))
-       (when (and (package-installed-p pkg) (fboundp init-func))
-         (spacemacs/message "Package: Initializing %s:%s..." layer pkg)
-         (configuration-layer//activate-package pkg)
-         (funcall init-func)
-         (setq initializedp t))))
-   (when initializedp) (spacemacs/loading-animation)))
+  (dolist (layer layers)
+    (condition-case err
+        (let* ((init-func (intern (format "%s/init-%s" layer pkg))))
+          (when (and (package-installed-p pkg) (fboundp init-func))
+            (spacemacs/message "Package: Initializing %s:%s..." layer pkg)
+            (configuration-layer//activate-package pkg)
+            (funcall init-func)
+            (setq initializedp t)))
+      ('error
+       (configuration-layer//set-error)
+       (spacemacs/append-to-buffer
+        (format (concat "An error occurred while initializing %s "
+                        "(error: %s)\n") pkg err)))))
+  (spacemacs/loading-animation))
 
 (defun configuration-layer//activate-package (pkg)
   "Activate PKG."
@@ -608,14 +622,20 @@ If PRE is non nil then the extensions are pre-extensions."
   "Initialize the extension EXT from the configuration layers LAYERS.
 If PRE is non nil then the extension is a pre-extensions."
   (dolist (layer layers)
-    (let* ((l (assq layer configuration-layer-layers))
-           (ext-dir (plist-get (cdr l) :ext-dir))
-           (init-func (intern (format "%s/init-%s" layer ext))))
-      (add-to-list 'load-path (format "%s%s/" ext-dir ext))
-      (spacemacs/loading-animation)
-      (spacemacs/message "%s-extension: Initializing %s:%s..."
-                         (if pre "Pre" "Post") layer ext)
-      (if (fboundp init-func) (funcall init-func)))))
+    (condition-case err
+        (let* ((l (assq layer configuration-layer-layers))
+               (ext-dir (plist-get (cdr l) :ext-dir))
+               (init-func (intern (format "%s/init-%s" layer ext))))
+          (add-to-list 'load-path (format "%s%s/" ext-dir ext))
+          (spacemacs/loading-animation)
+          (spacemacs/message "%s-extension: Initializing %s:%s..."
+                             (if pre "Pre" "Post") layer ext)
+          (if (fboundp init-func) (funcall init-func)))
+      ('error
+       (configuration-layer//set-error)
+       (spacemacs/append-to-buffer
+        (format (concat "An error occurred while initializing %s "
+                        "(error: %s)\n") ext err))))))
 
 (defun configuration-layer//initialized-packages-count ()
   "Return the number of initialized packages and extensions."
@@ -762,9 +782,6 @@ deleted safely."
     ;; (message "orphans: %s" orphans)
     (if orphans
         (progn
-          ;; for the loading dot bar
-          (when dotspacemacs-loading-progress-bar
-            (spacemacs/append-to-buffer "OK!\n"))
           (spacemacs/append-to-buffer
            (format "Found %s orphan package(s) to delete...\n"
                    orphans-count))
@@ -780,5 +797,13 @@ deleted safely."
             (spacemacs//redisplay))
           (spacemacs/append-to-buffer "\n"))
       (spacemacs/message "No orphan package to delete."))))
+
+(defun configuration-layer//set-error ()
+  "Set the error flag and change the mode-line color to red."
+  (if configuration-layer-error-count
+      (setq configuration-layer-error-count
+            (1+ configuration-layer-error-count))
+    (face-remap-add-relative 'mode-line '((:background "red") mode-line))
+    (setq configuration-layer-error-count 1)))
 
 (provide 'core-configuration-layer)
